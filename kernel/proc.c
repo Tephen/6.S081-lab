@@ -294,6 +294,8 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+  //Copy the trace mask from the parent to the child process.
+  np->tracemask = p->tracemask;
 
   release(&np->lock);
 
@@ -692,4 +694,15 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+//Return the amount of processes whose state is not UNUSED
+uint64 nprocamount(void)
+{
+  struct proc *p;
+  uint64 count = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if(p->state != UNUSED) count++;
+  }
+  return count;
 }

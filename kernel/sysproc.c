@@ -6,6 +6,8 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
+
 
 uint64
 sys_exit(void)
@@ -94,4 +96,30 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  if(argint(0, &myproc()->tracemask) < 0)
+    return -1;
+  return 0;
+}
+
+uint64 
+sys_sysinfo(void)
+{
+  struct proc *p = myproc();
+  struct sysinfo si;
+  uint64 sysinfoaddr;
+  //获取指针参数
+  if(argaddr(0, &sysinfoaddr) < 0)
+    return -1;
+  //填充内核的sysinfo结构体以待将该结构体值传给用户态地址
+  si.freemem = fmemamount();
+  si.nproc = nprocamount();
+  //将内核中si数据写入sysinfoaddr指向的用户态地址中
+  if(copyout(p->pagetable, sysinfoaddr, (char *)&si, sizeof(si)) < 0)
+    return -1;
+  return 0;
 }
