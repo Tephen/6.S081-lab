@@ -106,14 +106,24 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  //新加部分
+  //[start]##############
   //init per-process kernel pagetables
   p->kpagetable = ukpinit();
+
+  // 映射进程自身的kernel stack
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  ukpmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;
   }
-
+  //[end]##############
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -143,6 +153,20 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  //添加内容###############
+  //释放内核栈对应物理地址内容
+  if(p->kstack){
+    pte_t *pte  = walk(p->kpagetable, p->kstack, 0);
+    if(pte == 0)
+      panic("walk in freeproc");
+    kfree((void *)PTE2PA(*pte));
+  }
+  p->kstack = 0;
+  //释放kpage中的pte
+  if(p->kpagetable)
+    freepte(p->kpagetable);
+  p->kpagetable = 0;
+  //#####################
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -151,6 +175,21 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+}
+//释放进程的内核页表中的123级pte但不释放最后叶子pte指向的物理地址内容
+//修改自freewalk
+void freepte(pagetable_t pagetable){
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      freepte((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
 }
 
 // Create a user page table for a given process,
@@ -474,12 +513,16 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        //添加部分########
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+        //###############
         swtch(&c->context, &p->context);
-
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-
+        //无进程运行时使用原内核页表
+        kvminithart();
         found = 1;
       }
       release(&p->lock);
