@@ -15,6 +15,48 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+// add a mapping to the page table.
+// modified from kvmmap.
+void
+ukpmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(pagetable, va, sz, pa, perm) != 0)
+    panic("ukpmap");
+}
+
+/*
+ * create a direct-map page table for the per-process kernel.
+ */
+pagetable_t
+ukpinit()
+{
+  pagetable_t ukpagetable = 0;
+  ukpagetable = uvmcreate();
+  memset(ukpagetable, 0, PGSIZE);
+  
+  // uart registers
+  ukpmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  ukpmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  ukpmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  ukpmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  ukpmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  ukpmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  ukpmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
 /*
  * create a direct-map page table for the kernel.
  */
@@ -438,5 +480,35 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+// 固定只有3层,不使用递归形式增加额外开销
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      uint64 child = PTE2PA(pte);
+      pagetable_t pt2 = (pagetable_t)child;
+      for(int j = 0; j < 512; j++){
+        pte_t pte = pt2[j];
+        if(pte & PTE_V){
+          printf(".. ..%d: pte %p pa %p\n", j, pte, PTE2PA(pte));
+          uint64 child = PTE2PA(pte);
+          pagetable_t pt3 = (pagetable_t)child;
+          for(int k = 0; k < 512; k++){
+            pte_t pte = pt3[k];
+            if(pte & PTE_V){
+              printf(".. .. ..%d: pte %p pa %p\n", k, pte, PTE2PA(pte));
+            }
+          }
+        }
+      }
+    }
   }
 }

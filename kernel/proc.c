@@ -106,7 +106,8 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
+  //init per-process kernel pagetables
+  p->kpagetable = ukpinit();
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
