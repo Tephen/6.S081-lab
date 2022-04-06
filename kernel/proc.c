@@ -116,7 +116,7 @@ found:
   if(pa == 0)
     panic("kalloc");
   uint64 va = KSTACK((int) (p - proc));
-  ukpmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  mappages(p->kpagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
   p->kstack = va;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -153,7 +153,7 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
-  //添加内容###############
+
   //释放内核栈对应物理地址内容
   if(p->kstack){
     pte_t *pte  = walk(p->kpagetable, p->kstack, 0);
@@ -166,7 +166,7 @@ freeproc(struct proc *p)
   if(p->kpagetable)
     freepte(p->kpagetable);
   p->kpagetable = 0;
-  //#####################
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;

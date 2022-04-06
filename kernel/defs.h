@@ -171,7 +171,7 @@ uint64          uvmalloc(pagetable_t, uint64, uint64);
 uint64          uvmdealloc(pagetable_t, uint64, uint64);
 
 pagetable_t            ukpinit(void);
-void            ukpmap(pagetable_t, uint64, uint64, uint64, int);
+// void            ukpmap(pagetable_t, uint64, uint64, uint64, int);
 #ifdef SOL_COW
 #else
 int             uvmcopy(pagetable_t, pagetable_t, uint64);
