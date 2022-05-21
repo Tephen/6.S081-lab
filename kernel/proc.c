@@ -269,7 +269,8 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
+  //拷贝用户空间映射到进程内核页
+  uvm_to_ukp_copy(p->pagetable, p->kpagetable, 0, p->sz);
   release(&p->lock);
 }
 
@@ -278,6 +279,7 @@ userinit(void)
 int
 growproc(int n)
 {
+  // printf("in grwoproc");
   uint sz;
   struct proc *p = myproc();
 
@@ -286,8 +288,14 @@ growproc(int n)
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    // 拷贝新用户页表到进程内核页
+    if(uvm_to_ukp_copy(p->pagetable, p->kpagetable, p->sz, p->sz+n) != 0) {
+      return -1;
+    }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    // 除去缩减的用户空间的相关映射,注意边界对齐
+    uvmunmap(p->kpagetable, PGROUNDDOWN(sz), (PGROUNDDOWN(p->sz) - PGROUNDDOWN(sz))/PGSIZE, 0);
   }
   p->sz = sz;
   return 0;
@@ -314,6 +322,12 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  // 拷贝用户地址映射到进程内核页
+  if(uvm_to_ukp_copy(np->pagetable, np->kpagetable, 0, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;    
+  }
 
   np->parent = p;
 

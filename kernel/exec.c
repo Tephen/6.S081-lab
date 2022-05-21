@@ -12,6 +12,7 @@ static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uin
 int
 exec(char *path, char **argv)
 {
+  // printf("test");
   char *s, *last;
   int i, off;
   uint64 argc, sz = 0, sp, ustack[MAXARG+1], stackbase;
@@ -30,6 +31,7 @@ exec(char *path, char **argv)
   ilock(ip);
 
   // Check ELF header
+  //readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
   if(elf.magic != ELF_MAGIC)
@@ -40,6 +42,7 @@ exec(char *path, char **argv)
 
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
+    //读取program section header到ph
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
     if(ph.type != ELF_PROG_LOAD)
@@ -52,6 +55,10 @@ exec(char *path, char **argv)
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
     sz = sz1;
+    //进程大小超过PLIC时进程内核页中的内核部分映射会被覆盖
+    if(sz >= PLIC)
+      goto bad;
+    //#############################################
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
@@ -115,6 +122,10 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  //清除旧的用户空间映射防止陷入remap错误
+  uvmunmap(p->kpagetable, 0, oldsz/PGSIZE, 0);
+  //拷贝地址映射到进程内核页
+  uvm_to_ukp_copy(p->pagetable, p->kpagetable, 0, p->sz);
 
   if(p->pid == 1)
     vmprint(p->pagetable);
